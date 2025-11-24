@@ -9,33 +9,39 @@ pipeline {
     stages {
         stage('Setup Environment') {
             steps {
-                echo 'Installing Dependencies...'
-                // In real prod, use a Docker agent with Python pre-installed
-                sh 'pip install -r requirements.txt' 
-                sh 'pip install matplotlib' // Needed for visualization step
+                echo 'Creating Virtual Environment...'
+                // 1. Create venv named 'env'
+                // 2. Upgrade pip inside the venv
+                // 3. Install requirements inside the venv
+                sh '''
+                    python3 -m venv env
+                    env/bin/pip install --upgrade pip
+                    env/bin/pip install -r requirements.txt
+                    env/bin/pip install matplotlib
+                '''
             }
         }
 
         stage('Train Model') {
             steps {
                 echo 'Training the Model...'
-                // This runs the math and creates 'iris_model.pkl'
-                sh 'python train_model.py'
+                // Use the python INSIDE the venv (env/bin/python)
+                sh 'env/bin/python train_model.py'
             }
         }
 
         stage('Generate Reports') {
             steps {
                 echo 'Creating Visualizations...'
-                // This creates 'iris_plot.png'
-                sh 'python visualize.py'
+                // Use the python INSIDE the venv
+                sh 'env/bin/python visualize.py'
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                echo 'Building Docker Image with new Model...'
-                // The Dockerfile copies the 'iris_model.pkl' we just created above
+                echo 'Building Docker Image...'
+                // Docker doesn't care about the venv, it builds from the Dockerfile
                 sh "docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} ."
             }
         }
@@ -43,29 +49,20 @@ pipeline {
         stage('Test Container') {
             steps {
                 echo 'Smoke Testing...'
-                // 1. Run container in background
-                sh "docker run -d -p 8000:8000 --name ml-test ${DOCKER_IMAGE}:${DOCKER_TAG}"
-                
-                // 2. Sleep to let server start
+                sh "docker run -d -p 8000:8000 --name ml-test-${BUILD_NUMBER} ${DOCKER_IMAGE}:${DOCKER_TAG}"
                 sleep 5
-                
-                // 3. Curl the Health endpoint
                 sh "curl -f http://localhost:8000/health"
-                
-                // 4. Cleanup
-                sh "docker rm -f ml-test"
+                sh "docker rm -f ml-test-${BUILD_NUMBER}"
             }
         }
     }
 
     post {
         always {
-            // MLOPS GOLD: Archive the Model and Graph
-            // This lets you download the model/graph directly from Jenkins UI
             archiveArtifacts artifacts: 'iris_model.pkl, iris_plot.png', fingerprint: true
         }
         success {
-            echo 'Pipeline Succeeded. New Model Built.'
+            echo 'Pipeline Succeeded.'
         }
         failure {
             echo 'Pipeline Failed.'
