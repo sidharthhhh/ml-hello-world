@@ -4,11 +4,9 @@ pipeline {
     stages {
         stage('Setup Environment') {
             steps {
-                echo 'Installing System Tools...'
-                // FIX: Install 'zip' utility using root permissions
-                sh 'apt-get update && apt-get install -y zip'
-                
                 echo 'Setting up Python Venv...'
+                // REMOVED: apt-get commands (We don't need them anymore)
+                
                 sh 'rm -rf env' 
                 sh 'python3 -m venv env'
                 
@@ -30,9 +28,10 @@ pipeline {
 
         stage('Package Artifact') {
             steps {
-                echo 'Zipping the Application...'
-                // Now this will work because we installed zip above
-                sh 'zip -r release_package.zip main.py iris_model.pkl requirements.txt'
+                echo 'Packaging the Application...'
+                // FIX: Use 'tar' (Standard Linux tool) instead of 'zip'
+                // -c: Create, -z: Gzip (Compress), -f: File
+                sh 'tar -czf release_package.tar.gz main.py iris_model.pkl requirements.txt'
             }
         }
 
@@ -52,11 +51,12 @@ pipeline {
 
     post {
         always {
-            archiveArtifacts artifacts: 'release_package.zip, iris_plot.png, api.log', fingerprint: true
+            // UPDATE: Archive the .tar.gz file instead of .zip
+            archiveArtifacts artifacts: 'release_package.tar.gz, iris_plot.png, api.log', fingerprint: true
             sh 'rm -f pid.txt'
         }
         success {
-            echo 'Pipeline Succeeded!'
+            echo 'Pipeline Succeeded (Green)!'
         }
     }
 }
